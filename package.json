@@ -16,6 +16,7 @@
     "postbuild": "echo 'Build completed successfully!'"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.50.2",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",

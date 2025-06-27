@@ -1,18 +1,36 @@
 import React, { useState, useRef, DragEvent, ChangeEvent } from 'react';
 
+export interface ParsedData {
+  carrier: string;
+  premium: number;
+  commission: number;
+  lives: number;
+  month: string;
+  fileName: string;
+  fileType: string;
+  confidence: number;
+}
+
 interface FileUploaderProps {
   onFilesSelected?: (files: File[]) => void;
+  onParsedData?: (data: ParsedData) => void;
+  onFileProcessed?: (fileName: string) => void;
   multiple?: boolean;
   className?: string;
 }
 
 const FileUploader: React.FC<FileUploaderProps> = ({
   onFilesSelected,
+  onParsedData,
+  onFileProcessed,
   multiple = true,
   className = ''
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [parsedResults, setParsedResults] = useState<ParsedData[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingFile, setProcessingFile] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Allowed file types
@@ -32,7 +50,83 @@ const FileUploader: React.FC<FileUploaderProps> = ({
     return isValidType || isValidExtension;
   };
 
-  const handleFiles = (files: FileList | null) => {
+  const readFileAsText = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        resolve(result);
+      };
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+  };
+
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        // Remove the data URL prefix (e.g., "data:application/pdf;base64,")
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const parseFile = async (file: File): Promise<ParsedData | null> => {
+    try {
+      setProcessingFile(file.name);
+      
+      let fileContent: string;
+      
+      // Try to read as text first (for Excel files)
+      if (file.type.includes('excel') || file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
+        try {
+          fileContent = await readFileAsText(file);
+        } catch {
+          // Fallback to base64 if text reading fails
+          fileContent = await readFileAsBase64(file);
+        }
+      } else {
+        // For PDFs, use base64
+        fileContent = await readFileAsBase64(file);
+      }
+
+      const response = await fetch('/api/parse', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileContent,
+          fileName: file.name,
+          fileType: file.type
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Parsing failed');
+      }
+
+      return result.data;
+    } catch (error) {
+      console.error('Error parsing file:', error);
+      return null;
+    } finally {
+      setProcessingFile('');
+    }
+  };
+
+  const handleFiles = async (files: FileList | null) => {
     if (!files) return;
 
     const validFiles: File[] = [];
@@ -55,6 +149,22 @@ const FileUploader: React.FC<FileUploaderProps> = ({
       const newFiles = multiple ? [...uploadedFiles, ...validFiles] : validFiles;
       setUploadedFiles(newFiles);
       onFilesSelected?.(newFiles);
+
+      // Parse each file
+      setIsProcessing(true);
+      const newParsedResults: ParsedData[] = [];
+      
+      for (const file of validFiles) {
+        const parsedData = await parseFile(file);
+        if (parsedData) {
+          newParsedResults.push(parsedData);
+          onParsedData?.(parsedData);
+          onFileProcessed?.(file.name);
+        }
+      }
+      
+      setParsedResults(prev => [...prev, ...newParsedResults]);
+      setIsProcessing(false);
     }
   };
 
@@ -132,6 +242,53 @@ const FileUploader: React.FC<FileUploaderProps> = ({
               >
                 ✕
               </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Processing Status */}
+      {isProcessing && (
+        <div className="processing-status">
+          <div className="processing-spinner"></div>
+          <p>Processing {processingFile}...</p>
+        </div>
+      )}
+
+      {/* Parsed Results */}
+      {parsedResults.length > 0 && (
+        <div className="parsed-results">
+          <h4>📊 Parsed Data:</h4>
+          {parsedResults.map((result, index) => (
+            <div key={index} className="parsed-card">
+              <div className="parsed-header">
+                <span className="carrier-name">{result.carrier}</span>
+                <span className="confidence-badge">
+                  {Math.round(result.confidence * 100)}% confidence
+                </span>
+              </div>
+              <div className="parsed-details">
+                <div className="detail-row">
+                  <span className="detail-label">Premium:</span>
+                  <span className="detail-value">${result.premium.toLocaleString()}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Commission:</span>
+                  <span className="detail-value">${result.commission.toLocaleString()}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Lives:</span>
+                  <span className="detail-value">{result.lives.toLocaleString()}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Month:</span>
+                  <span className="detail-value">{result.month}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">File:</span>
+                  <span className="detail-value">{result.fileName}</span>
+                </div>
+              </div>
             </div>
           ))}
         </div>
@@ -241,6 +398,106 @@ const FileUploader: React.FC<FileUploaderProps> = ({
 
         .remove-file:hover {
           background-color: #f8d7da;
+        }
+
+        .processing-status {
+          margin-top: 20px;
+          padding: 16px;
+          background-color: #e3f2fd;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .processing-spinner {
+          width: 20px;
+          height: 20px;
+          border: 2px solid #2196f3;
+          border-top: 2px solid transparent;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+
+        .processing-status p {
+          margin: 0;
+          color: #1976d2;
+          font-weight: 500;
+        }
+
+        .parsed-results {
+          margin-top: 20px;
+        }
+
+        .parsed-results h4 {
+          margin: 0 0 16px 0;
+          color: #333;
+          font-size: 16px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .parsed-card {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 12px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .parsed-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 12px;
+        }
+
+        .carrier-name {
+          font-size: 18px;
+          font-weight: 600;
+        }
+
+        .confidence-badge {
+          background: rgba(255, 255, 255, 0.2);
+          padding: 4px 8px;
+          border-radius: 12px;
+          font-size: 12px;
+          font-weight: 500;
+        }
+
+        .parsed-details {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+        }
+
+        .detail-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .detail-label {
+          font-size: 14px;
+          opacity: 0.9;
+        }
+
+        .detail-value {
+          font-weight: 600;
+          font-size: 14px;
+        }
+
+        @media (max-width: 480px) {
+          .parsed-details {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
     </div>

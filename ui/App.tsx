@@ -1,8 +1,25 @@
-import React from 'react';
+import React, { useState } from 'react';
 import FileUploader from './components/FileUploader';
 import SidebarCopilot from './components/SidebarCopilot';
 
+interface ParsedData {
+  carrier: string;
+  premium: number;
+  commission: number;
+  lives: number;
+  month: string;
+  fileName: string;
+  fileType: string;
+  confidence: number;
+}
+
 const App: React.FC = () => {
+  const [parsedData, setParsedData] = useState<ParsedData[]>([]);
+
+  const handleParsedData = (data: ParsedData) => {
+    setParsedData(prev => [...prev, data]);
+  };
+
   return (
     <div className="app">
       <div className="app-header">
@@ -17,12 +34,12 @@ const App: React.FC = () => {
             <p>Upload your documents to get started</p>
           </div>
           <div className="upload-container">
-            <FileUploader />
+            <FileUploader onParsedData={handleParsedData} />
           </div>
         </div>
 
         <div className="copilot-panel">
-          <SidebarCopilot />
+          <SidebarCopilot parsedData={parsedData} />
         </div>
       </div>
 

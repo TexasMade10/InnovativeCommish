@@ -1,5 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 
+interface ParsedData {
+  carrier: string;
+  premium: number;
+  commission: number;
+  lives: number;
+  month: string;
+  fileName: string;
+  fileType: string;
+  confidence: number;
+}
+
 interface Message {
   id: string;
   text: string;
@@ -9,9 +20,13 @@ interface Message {
 
 interface SidebarCopilotProps {
   className?: string;
+  parsedData?: ParsedData[];
 }
 
-const SidebarCopilot: React.FC<SidebarCopilotProps> = ({ className = '' }) => {
+const SidebarCopilot: React.FC<SidebarCopilotProps> = ({ 
+  className = '', 
+  parsedData = [] 
+}) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -32,6 +47,69 @@ const SidebarCopilot: React.FC<SidebarCopilotProps> = ({ className = '' }) => {
     scrollToBottom();
   }, [messages]);
 
+  // Update welcome message when parsed data is available
+  useEffect(() => {
+    if (parsedData.length > 0) {
+      const totalCommission = parsedData.reduce((sum, data) => sum + data.commission, 0);
+      const totalPremium = parsedData.reduce((sum, data) => sum + data.premium, 0);
+      const totalLives = parsedData.reduce((sum, data) => sum + data.lives, 0);
+      
+      const welcomeMessage: Message = {
+        id: 'welcome-update',
+        text: `Great! I can see ${parsedData.length} statement(s) with $${totalCommission.toLocaleString()} in commissions, $${totalPremium.toLocaleString()} in premium, and ${totalLives.toLocaleString()} total lives. Ask me anything about this data!`,
+        isUser: false,
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => {
+        // Replace the first message if it's the default welcome
+        if (prev[0]?.id === '1') {
+          return [welcomeMessage, ...prev.slice(1)];
+        }
+        return prev;
+      });
+    }
+  }, [parsedData]);
+
+  const generateContextAwareResponse = (userQuestion: string): string => {
+    if (parsedData.length === 0) {
+      return "I don't see any parsed data yet. Please upload and process some statements first!";
+    }
+
+    const question = userQuestion.toLowerCase();
+    
+    // Context-aware responses based on parsed data
+    if (question.includes('total') || question.includes('sum')) {
+      const totalCommission = parsedData.reduce((sum, data) => sum + data.commission, 0);
+      const totalPremium = parsedData.reduce((sum, data) => sum + data.premium, 0);
+      return `Total commissions: $${totalCommission.toLocaleString()}\nTotal premium: $${totalPremium.toLocaleString()}`;
+    }
+    
+    if (question.includes('carrier') || question.includes('carriers')) {
+      const carriers = Array.from(new Set(parsedData.map(data => data.carrier)));
+      return `I found data from ${carriers.length} carrier(s): ${carriers.join(', ')}`;
+    }
+    
+    if (question.includes('month') || question.includes('period')) {
+      const months = Array.from(new Set(parsedData.map(data => data.month)));
+      return `Statements cover these periods: ${months.join(', ')}`;
+    }
+    
+    if (question.includes('commission') || question.includes('rate')) {
+      const avgRate = parsedData.reduce((sum, data) => sum + (data.commission / data.premium), 0) / parsedData.length;
+      return `Average commission rate across all statements: ${(avgRate * 100).toFixed(1)}%`;
+    }
+    
+    if (question.includes('lives') || question.includes('subscribers')) {
+      const totalLives = parsedData.reduce((sum, data) => sum + data.lives, 0);
+      return `Total lives covered: ${totalLives.toLocaleString()}`;
+    }
+    
+    // Default response with available data summary
+    const totalCommission = parsedData.reduce((sum, data) => sum + data.commission, 0);
+    return `I can see ${parsedData.length} statement(s) with $${totalCommission.toLocaleString()} in total commissions. What specific information would you like to know about this data?`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -48,12 +126,12 @@ const SidebarCopilot: React.FC<SidebarCopilotProps> = ({ className = '' }) => {
     setInputValue('');
     setIsLoading(true);
 
-    // TODO: Connect to GPT API here
-    // For now, just simulate a response
+    // Generate context-aware response
     setTimeout(() => {
+      const response = generateContextAwareResponse(inputValue);
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: 'This is a placeholder response. GPT integration coming soon!',
+        text: response,
         isUser: false,
         timestamp: new Date()
       };

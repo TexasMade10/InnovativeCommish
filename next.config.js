@@ -3,11 +3,6 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
   
-  // Disable experimental features that might cause issues
-  experimental: {
-    appDir: false,
-  },
-  
   // TypeScript configuration
   typescript: {
     // Don't ignore build errors - fix them instead

@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+
+# macOS
+.DS_Store
+
+# Build outputs
+dist/
+build/
+
+# Test coverage
+coverage/
+
+# Vercel deployment
+.vercel/ 

@@ -1,8 +1,5 @@
-import type { NextPage } from 'next'
 import App from '../ui/App'
 
-const Home: NextPage = () => {
+export default function Home() {
   return <App />
-}
-
-export default Home 
+} 
